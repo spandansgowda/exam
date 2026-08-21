@@ -952,6 +952,11 @@ Provide a crisp, crystal-clear explanation (under 3-4 paragraphs) that breaks do
   }
 });
 
+// Fallback JSON 404 handler for all /api/* routes to prevent HTML response returns
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ success: false, error: `API route not found: ${req.method} ${req.originalUrl}` });
+});
+
 // --- SERVER INITIALIZATION ---
 const isProduction = process.env.NODE_ENV === 'production';
 const staticDistPath = path.resolve(process.cwd(), 'dist');

@@ -4,6 +4,7 @@ import { ExamQuestion } from '../../types';
 import { MCQPractice } from './MCQPractice';
 import { SubjectivePractice } from './SubjectivePractice';
 import { DoubtChatDrawer } from './DoubtChatDrawer';
+import { safeFetchJSON } from '../../utils/apiUtils';
 
 const PRESET_TOPICS = [
   { topic: 'Distributed Systems', subtopics: ['CAP Theorem', 'Consensus Protocols (Raft/Paxos)', 'Vector Clocks', 'Eventual Consistency'] },
@@ -47,7 +48,7 @@ export const PracticeHub: React.FC = () => {
         }),
       });
 
-      const data = await res.json();
+      const data = await safeFetchJSON(res);
       if (data.questions && data.questions.length > 0) {
         setQuestions(data.questions);
       } else if (data.error) {

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Sparkles, RefreshCw, CheckCircle2, AlertCircle, Award, MessageSquare, BookOpen, ChevronDown, ChevronUp } from 'lucide-react';
 import { PracticeEvaluationResult } from '../../types';
+import { safeFetchJSON } from '../../utils/apiUtils';
 
 interface SubjectivePracticeProps {
   onOpenDoubtChat: (questionContext: string) => void;
@@ -55,7 +56,7 @@ export const SubjectivePractice: React.FC<SubjectivePracticeProps> = ({ onOpenDo
         }),
       });
 
-      const data = await res.json();
+      const data = await safeFetchJSON(res);
       setResult(data);
     } catch (err) {
       console.error('Evaluation error:', err);

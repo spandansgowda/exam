@@ -13,6 +13,7 @@ import { PhoneStreamer } from './components/MobilePhoneCamera/PhoneStreamer';
 import { ShieldCheck, Video, ArrowRight, BookOpen, Users, Smartphone, CheckSquare, Sparkles, KeyRound } from 'lucide-react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from './firebase';
+import { safeFetchJSON } from './utils/apiUtils';
 
 export default function App() {
   // Firebase Auth State & Modal
@@ -74,14 +75,14 @@ export default function App() {
     setIsLoading(true);
     try {
       const res = await fetch(`/api/exams/${examCodeInput.trim() || 'ENG-2026'}`);
-      const data = await res.json();
+      const data = await safeFetchJSON<any>(res);
       if (data.success && data.exam) {
         setSelectedExam(data.exam);
         setExamStep(1); // Go to ID Verification
       } else {
         // Fallback to first available exam
         const allRes = await fetch('/api/exams');
-        const allData = await allRes.json();
+        const allData = await safeFetchJSON<any>(allRes);
         if (allData.exams && allData.exams.length > 0) {
           setSelectedExam(allData.exams[0]);
           setExamStep(1);
@@ -110,7 +111,7 @@ export default function App() {
           secondaryDeviceCode: pairingCode,
         }),
       });
-      const data = await res.json();
+      const data = await safeFetchJSON<any>(res);
       if (data.success) {
         setActiveSession(data.session);
         setExamStep(5); // In Exam Room

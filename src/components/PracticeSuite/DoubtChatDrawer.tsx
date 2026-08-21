@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Bot, Send, User, X, Sparkles, RefreshCw, MessageSquare } from 'lucide-react';
 import { DoubtChatMessage } from '../../types';
+import { safeFetchJSON } from '../../utils/apiUtils';
 
 interface DoubtChatDrawerProps {
   isOpen: boolean;
@@ -55,7 +56,7 @@ export const DoubtChatDrawer: React.FC<DoubtChatDrawerProps> = ({
           conversationHistory: messages.slice(-4),
         }),
       });
-      const data = await res.json();
+      const data = await safeFetchJSON(res);
       const aiReply: DoubtChatMessage = {
         id: `ai-${Date.now()}`,
         sender: 'assistant',

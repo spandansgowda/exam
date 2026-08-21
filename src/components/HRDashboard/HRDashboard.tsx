@@ -5,6 +5,7 @@ import { LiveMonitoringGrid } from './LiveMonitoringGrid';
 import { CandidateAuditModal } from './CandidateAuditModal';
 import { CreateExamModal } from './CreateExamModal';
 import { exportCandidateReportCSV } from '../../utils/exportUtils';
+import { safeFetchJSON } from '../../utils/apiUtils';
 
 export const HRDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'live' | 'candidates' | 'exams' | 'settings'>('live');
@@ -26,8 +27,8 @@ export const HRDashboard: React.FC = () => {
   const loadData = async () => {
     try {
       const [resExams, resSessions] = await Promise.all([
-        fetch('/api/exams').then((r) => r.json()),
-        fetch('/api/sessions').then((r) => r.json()),
+        fetch('/api/exams').then((r) => safeFetchJSON(r, { exams: [] })),
+        fetch('/api/sessions').then((r) => safeFetchJSON(r, { sessions: [] })),
       ]);
       if (resExams.exams) setExams(resExams.exams);
       if (resSessions.sessions) setSessions(resSessions.sessions);
