@@ -17,19 +17,23 @@ export function getGroqClient(): Groq | null {
  */
 export async function generateMCQsWithGroq(topic: string, subtopic?: string, difficulty = 'medium', count = 5) {
   const groq = getGroqClient();
+  const safeTopic = (topic || '').trim().slice(0, 200);
+  const safeSubtopic = (subtopic || 'General').trim().slice(0, 200);
+
   if (!groq) {
     throw new Error('GROQ_API_KEY is not configured in .env file.');
   }
 
-  const completion = await groq.chat.completions.create({
-    messages: [
-      {
-        role: 'system',
-        content: 'You are an expert exam question generator. You MUST respond with ONLY a raw JSON object matching the requested schema without any markdown wrapping or backticks.',
-      },
-      {
-        role: 'user',
-        content: `Generate ${count} high-quality MCQs on Topic: "${topic}", Subtopic: "${subtopic || 'General'}", Difficulty: "${difficulty}".
+  try {
+    const completion = await groq.chat.completions.create({
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert exam question generator. Output ONLY a valid raw JSON object matching the requested schema.',
+        },
+        {
+          role: 'user',
+          content: `Generate ${Math.min(10, Math.max(1, count))} high-quality MCQs on Topic: "${safeTopic}", Subtopic: "${safeSubtopic}", Difficulty: "${difficulty}".
 Format strictly as JSON:
 {
   "questions": [
@@ -40,17 +44,33 @@ Format strictly as JSON:
       "correct_answer": "exact string match of correct option",
       "explanation": "concise explanation",
       "difficulty": "${difficulty}",
-      "topic": "${topic}",
-      "subtopic": "${subtopic || ''}"
+      "topic": "${safeTopic}",
+      "subtopic": "${safeSubtopic}"
     }
   ]
 }`,
-      },
-    ],
-    model: 'llama-3.3-70b-versatile',
-    response_format: { type: 'json_object' },
-  });
+        },
+      ],
+      model: 'groq/compound',
+    });
 
-  const text = completion.choices[0]?.message?.content || '{}';
-  return JSON.parse(text);
+    const text = completion.choices[0]?.message?.content || '{}';
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      const match = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      if (match && match[1]) return JSON.parse(match[1].trim());
+      const objMatch = text.match(/\{[\s\S]*\}/);
+      if (objMatch) return JSON.parse(objMatch[0]);
+      return { questions: [] };
+    }
+  } catch (err: any) {
+    console.warn('Direct Groq API client call failed, falling back to server route:', err?.message || err);
+    const res = await fetch('/api/practice/generate-mcq', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic: safeTopic, subtopic: safeSubtopic, difficulty, count }),
+    });
+    return await res.json();
+  }
 }

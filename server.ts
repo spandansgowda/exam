@@ -659,15 +659,21 @@ app.post('/api/practice/generate-mcq', async (req, res) => {
       return res.status(400).json({ questions: [], error: 'Topic is required to generate practice questions.' });
     }
 
+    const safeTopic = (topic || '').trim().slice(0, 200);
+    const safeSubtopic = (subtopic || 'General').trim().slice(0, 200);
+    const safePrev = Array.isArray(previousQuestions) 
+      ? previousQuestions.slice(-5).map((q: any) => typeof q === 'string' ? q.slice(0, 150) : String(q).slice(0, 150))
+      : [];
+
     const prompt = `You are an expert exam question generator integrated into an educational practice platform used by students preparing for proctored exams.
 
 CONTEXT:
 Generate a set of high-quality, original MCQs.
-- Topic: "${topic}"
-- Subtopic: "${subtopic || 'General'}"
+- Topic: "${safeTopic}"
+- Subtopic: "${safeSubtopic}"
 - Difficulty: "${difficulty}" (easy: recall/definitions; medium: application/reasoning; hard: multi-step analysis/edge cases)
-- Number of questions: ${count}
-${previousQuestions.length > 0 ? `- Previously generated to avoid repeating: ${JSON.stringify(previousQuestions.slice(-10))}` : ''}
+- Number of questions: ${Math.min(10, Math.max(1, count))}
+${safePrev.length > 0 ? `- Previously generated to avoid repeating: ${JSON.stringify(safePrev)}` : ''}
 
 RULES FOR QUESTION QUALITY:
 - Each question must test a single, clear concept. Avoid compound or trick questions.
@@ -687,24 +693,28 @@ OUTPUT JSON FORMAT ONLY with schema:
       "correct_answer": "exact string match of correct option",
       "explanation": "concise explanation",
       "difficulty": "${difficulty}",
-      "topic": "${topic}",
-      "subtopic": "${subtopic || ''}"
+      "topic": "${safeTopic}",
+      "subtopic": "${safeSubtopic}"
     }
   ]
 }`;
 
     if (groq) {
-      const completion = await groq.chat.completions.create({
-        messages: [
-          { role: 'system', content: 'You are an AI exam question generator. Output ONLY a valid JSON object matching the schema.' },
-          { role: 'user', content: prompt }
-        ],
-        model: 'groq/compound',
-      });
+      try {
+        const completion = await groq.chat.completions.create({
+          messages: [
+            { role: 'system', content: 'You are an AI exam question generator. Output ONLY a valid JSON object matching the schema.' },
+            { role: 'user', content: prompt }
+          ],
+          model: 'groq/compound',
+        });
 
-      const rawText = completion.choices[0]?.message?.content || '';
-      const parsed = cleanParseJSON(rawText, { questions: [] });
-      return res.json(parsed);
+        const rawText = completion.choices[0]?.message?.content || '';
+        const parsed = cleanParseJSON(rawText, { questions: [] });
+        return res.json(parsed);
+      } catch (groqErr: any) {
+        console.warn('Groq API call warning in generate-mcq:', groqErr?.message || groqErr);
+      }
     }
 
     if (ai) {
@@ -799,17 +809,22 @@ app.post('/api/practice/evaluate-subjective', async (req, res) => {
       return res.status(400).json({ error: 'Question and student answer are required.' });
     }
 
+    const safeQuestion = (question || '').slice(0, 1000);
+    const safeStudentAnswer = (studentAnswer || '').slice(0, 3000);
+    const safeRubric = (rubricGuidelines || '').slice(0, 1000);
+    const safeTopic = (topic || '').slice(0, 200);
+
     const prompt = `You are a strict yet constructive exam grading examiner for a proctored technical evaluation.
 Grade the candidate's subjective response objectively based on the question and rubric.
 
-Question: "${question}"
-Topic: "${topic || 'General Technical'}"
-Rubric / Ideal Guidelines: "${rubricGuidelines || 'Evaluate conceptual correctness, depth, edge cases, and practical clarity.'}"
+Question: "${safeQuestion}"
+Topic: "${safeTopic || 'General Technical'}"
+Rubric / Ideal Guidelines: "${safeRubric || 'Evaluate conceptual correctness, depth, edge cases, and practical clarity.'}"
 Maximum Possible Score: ${maxScore}
 
 Candidate's Submitted Answer:
 """
-${studentAnswer}
+${safeStudentAnswer}
 """
 
 Evaluate fairly. Return ONLY JSON matching this schema:
@@ -827,17 +842,21 @@ Evaluate fairly. Return ONLY JSON matching this schema:
 }`;
 
     if (groq) {
-      const completion = await groq.chat.completions.create({
-        messages: [
-          { role: 'system', content: 'You are an AI exam evaluation engine. Output ONLY valid JSON matching the schema.' },
-          { role: 'user', content: prompt }
-        ],
-        model: 'groq/compound',
-      });
+      try {
+        const completion = await groq.chat.completions.create({
+          messages: [
+            { role: 'system', content: 'You are an AI exam evaluation engine. Output ONLY valid JSON matching the schema.' },
+            { role: 'user', content: prompt }
+          ],
+          model: 'groq/compound',
+        });
 
-      const rawText = completion.choices[0]?.message?.content || '';
-      const parsed = cleanParseJSON(rawText, {});
-      return res.json(parsed);
+        const rawText = completion.choices[0]?.message?.content || '';
+        const parsed = cleanParseJSON(rawText, {});
+        return res.json(parsed);
+      } catch (groqErr: any) {
+        console.warn('Groq API call warning in evaluate-subjective:', groqErr?.message || groqErr);
+      }
     }
 
     if (ai) {
@@ -910,28 +929,35 @@ app.post('/api/practice/ask-doubt', async (req, res) => {
 
     if (!userQuery) return res.status(400).json({ error: 'Query is required.' });
 
+    const safeContext = (questionContext || 'General practice question').slice(0, 1000);
+    const safeQuery = (userQuery || '').slice(0, 1000);
+
     const prompt = `You are an encouraging, highly knowledgeable AI Exam Preparation Tutor for students studying for rigorous exams.
 The student has a doubt about a practice question.
 
 Question Context:
-"${questionContext || 'General practice question'}"
+"${safeContext}"
 
 Student's Question:
-"${userQuery}"
+"${safeQuery}"
 
 Provide a crisp, crystal-clear explanation (under 3-4 paragraphs) that breaks down the concepts intuitively with analogies or concise pseudo-code where helpful, without being overly verbose.`;
 
     if (groq) {
-      const completion = await groq.chat.completions.create({
-        messages: [
-          { role: 'system', content: 'You are an encouraging AI Exam Preparation Tutor.' },
-          { role: 'user', content: prompt }
-        ],
-        model: 'groq/compound',
-      });
+      try {
+        const completion = await groq.chat.completions.create({
+          messages: [
+            { role: 'system', content: 'You are an encouraging AI Exam Preparation Tutor.' },
+            { role: 'user', content: prompt }
+          ],
+          model: 'groq/compound',
+        });
 
-      const reply = completion.choices[0]?.message?.content || '';
-      return res.json({ reply });
+        const reply = completion.choices[0]?.message?.content || '';
+        return res.json({ reply });
+      } catch (groqErr: any) {
+        console.warn('Groq API call warning in ask-doubt:', groqErr?.message || groqErr);
+      }
     }
 
     if (ai) {
