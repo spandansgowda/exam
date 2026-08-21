@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserRole, Exam, ExamSession } from './types';
 import { Navbar } from './components/Navbar';
+import { AuthModal } from './components/AuthModal';
 import { IDVerification } from './components/StudentExamFlow/IDVerification';
 import { SystemCheckModal } from './components/StudentExamFlow/SystemCheckModal';
 import { PhonePairingModal } from './components/StudentExamFlow/PhonePairingModal';
@@ -10,8 +11,15 @@ import { PracticeHub } from './components/PracticeSuite/PracticeHub';
 import { HRDashboard } from './components/HRDashboard/HRDashboard';
 import { PhoneStreamer } from './components/MobilePhoneCamera/PhoneStreamer';
 import { ShieldCheck, Video, ArrowRight, BookOpen, Users, Smartphone, CheckSquare, Sparkles, KeyRound } from 'lucide-react';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { auth } from './firebase';
 
 export default function App() {
+  // Firebase Auth State & Modal
+  const [user, setUser] = useState<User | null>(null);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+
   // Global Role and View State
   const [role, setRole] = useState<UserRole>('student');
   const [activeView, setActiveView] = useState<'exam' | 'practice' | 'hr' | 'phone_streamer'>('exam');
@@ -28,6 +36,18 @@ export default function App() {
   const [activeSession, setActiveSession] = useState<ExamSession | null>(null);
   const [rulesAgreed, setRulesAgreed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Subscribe to Firebase Auth changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        if (currentUser.displayName) setCandidateName(currentUser.displayName);
+        if (currentUser.email) setCandidateEmail(currentUser.email);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Parse URL query params on load (e.g. for phone pairing: ?role=phone&code=123456)
   useEffect(() => {
@@ -113,6 +133,11 @@ export default function App() {
         activeView={activeView}
         setActiveView={setActiveView}
         isExamInProgress={isExamInProgress}
+        user={user}
+        onOpenAuth={(mode) => {
+          setAuthMode(mode);
+          setAuthModalOpen(true);
+        }}
       />
 
       <main className="flex-1">
@@ -330,6 +355,18 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Firebase Auth Modal (Login / Sign Up) */}
+      <AuthModal
+        isOpen={authModalOpen}
+        initialMode={authMode}
+        onClose={() => setAuthModalOpen(false)}
+        onSuccess={(loggedInUser) => {
+          setUser(loggedInUser);
+          if (loggedInUser.displayName) setCandidateName(loggedInUser.displayName);
+          if (loggedInUser.email) setCandidateEmail(loggedInUser.email);
+        }}
+      />
     </div>
   );
 }

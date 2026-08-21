@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Video, Users, BookOpen, Smartphone, Activity, Menu, X } from 'lucide-react';
+import { ShieldCheck, Video, Users, BookOpen, Smartphone, Activity, Menu, X, LogIn, UserPlus, LogOut, User as UserIcon } from 'lucide-react';
 import { UserRole } from '../types';
+import { User } from 'firebase/auth';
+import { signOut } from 'firebase/auth';
+import { auth } from '../firebase';
 
 interface NavbarProps {
   currentRole: UserRole;
@@ -8,6 +11,8 @@ interface NavbarProps {
   activeView: 'exam' | 'practice' | 'hr' | 'phone_streamer';
   setActiveView: (view: 'exam' | 'practice' | 'hr' | 'phone_streamer') => void;
   isExamInProgress?: boolean;
+  user?: User | null;
+  onOpenAuth?: (mode: 'login' | 'signup') => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -16,8 +21,18 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeView,
   setActiveView,
   isExamInProgress = false,
+  user = null,
+  onOpenAuth,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+    } catch (e) {
+      console.error('Sign out error:', e);
+    }
+  };
 
   return (
     <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 text-white shadow-md select-none">
@@ -111,7 +126,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </nav>
         )}
 
-        {/* Right Role Switcher & Mobile Menu Toggle */}
+        {/* Right Controls: Role Switcher & Auth Buttons */}
         <div className="flex items-center space-x-3">
           {isExamInProgress ? (
             <div className="flex items-center space-x-2 bg-rose-500/10 border border-rose-500/30 px-3 py-1.5 rounded-lg text-rose-400 text-xs font-semibold animate-pulse">
@@ -120,38 +135,89 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="sm:hidden">EXAM LOCKED</span>
             </div>
           ) : (
-            <div className="flex items-center space-x-2 text-xs bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
-              <span className="text-slate-400 hidden sm:inline">Role:</span>
-              <button
-                id="role-switch-student"
-                onClick={() => {
-                  setRole('student');
-                  setActiveView('exam');
-                }}
-                className={`font-semibold px-2 py-0.5 rounded transition ${
-                  currentRole === 'student'
-                    ? 'bg-blue-500 text-white'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Candidate
-              </button>
-              <span className="text-slate-600">|</span>
-              <button
-                id="role-switch-hr"
-                onClick={() => {
-                  setRole('hr');
-                  setActiveView('hr');
-                }}
-                className={`font-semibold px-2 py-0.5 rounded transition ${
-                  currentRole === 'hr'
-                    ? 'bg-amber-500 text-white'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                HR Admin
-              </button>
-            </div>
+            <>
+              {/* Role Switcher */}
+              <div className="hidden lg:flex items-center space-x-2 text-xs bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
+                <span className="text-slate-400 hidden sm:inline">Role:</span>
+                <button
+                  id="role-switch-student"
+                  onClick={() => {
+                    setRole('student');
+                    setActiveView('exam');
+                  }}
+                  className={`font-semibold px-2 py-0.5 rounded transition ${
+                    currentRole === 'student'
+                      ? 'bg-blue-500 text-white'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Candidate
+                </button>
+                <span className="text-slate-600">|</span>
+                <button
+                  id="role-switch-hr"
+                  onClick={() => {
+                    setRole('hr');
+                    setActiveView('hr');
+                  }}
+                  className={`font-semibold px-2 py-0.5 rounded transition ${
+                    currentRole === 'hr'
+                      ? 'bg-amber-500 text-white'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  HR Admin
+                </button>
+              </div>
+
+              {/* Login / Sign Up vs User Profile */}
+              {user ? (
+                <div className="flex items-center space-x-2 bg-slate-800/80 border border-slate-700/80 px-2.5 py-1.5 rounded-xl">
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt="Avatar" className="w-6 h-6 rounded-full border border-blue-400/40" />
+                  ) : (
+                    <div className="w-6 h-6 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">
+                      {user.displayName ? user.displayName.charAt(0).toUpperCase() : user.email?.charAt(0).toUpperCase() || 'U'}
+                    </div>
+                  )}
+                  <div className="hidden sm:block text-left">
+                    <div className="text-xs font-semibold text-slate-100 max-w-[100px] truncate leading-tight">
+                      {user.displayName || 'Candidate'}
+                    </div>
+                    <div className="text-[10px] text-slate-400 max-w-[100px] truncate leading-tight">
+                      {user.email}
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleSignOut}
+                    title="Sign Out"
+                    className="p-1 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-700/50 transition ml-1"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center space-x-2">
+                  <button
+                    id="nav-login-btn"
+                    onClick={() => onOpenAuth && onOpenAuth('login')}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition"
+                  >
+                    <LogIn className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Login</span>
+                  </button>
+
+                  <button
+                    id="nav-signup-btn"
+                    onClick={() => onOpenAuth && onOpenAuth('signup')}
+                    className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-600/20 transition"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>Sign Up</span>
+                  </button>
+                </div>
+              )}
+            </>
           )}
 
           {!isExamInProgress && (
