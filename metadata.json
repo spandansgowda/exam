@@ -1,0 +1,6 @@
+{
+  "name": "AI Proctoring & Candidate Exam Detection System",
+  "description": "Enterprise-grade AI exam proctoring platform with dual-camera face recognition, tab-switch detection, 3-strike violation auto-submission, HR live monitoring matrix, and dedicated LLM practice portal.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
