@@ -3,6 +3,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import Groq from 'groq-sdk';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 
 dotenv.config();
 
@@ -381,6 +382,49 @@ const store: Store = {
   phonePairings: {},
 };
 
+// Disk Persistence for store
+const DATA_STORE_PATH = path.resolve(process.cwd(), '.data_store.json');
+
+function loadStoreFromDisk() {
+  try {
+    if (fs.existsSync(DATA_STORE_PATH)) {
+      const fileData = JSON.parse(fs.readFileSync(DATA_STORE_PATH, 'utf-8'));
+      if (fileData.exams && Array.isArray(fileData.exams) && fileData.exams.length > 0) {
+        // Merge file exams with initial exams
+        const existingCodes = new Set(fileData.exams.map((e: any) => e.code.toUpperCase()));
+        store.exams.forEach((e) => {
+          if (!existingCodes.has(e.code.toUpperCase())) {
+            fileData.exams.push(e);
+          }
+        });
+        store.exams = fileData.exams;
+      }
+      if (fileData.sessions && Array.isArray(fileData.sessions)) {
+        const existingSessionIds = new Set(fileData.sessions.map((s: any) => s.id));
+        store.sessions.forEach((s) => {
+          if (!existingSessionIds.has(s.id)) {
+            fileData.sessions.push(s);
+          }
+        });
+        store.sessions = fileData.sessions;
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load store from disk:', err);
+  }
+}
+
+function saveStoreToDisk() {
+  try {
+    fs.writeFileSync(DATA_STORE_PATH, JSON.stringify({ exams: store.exams, sessions: store.sessions }, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Failed to save store to disk:', err);
+  }
+}
+
+// Load persisted data on server boot
+loadStoreFromDisk();
+
 // --- EXAM ROUTES ---
 app.get('/api/exams', (req, res) => {
   res.json({ success: true, exams: store.exams });
@@ -427,15 +471,57 @@ app.post('/api/exams', (req, res) => {
     ],
   };
   store.exams.unshift(newExam);
+  saveStoreToDisk();
   res.json({ success: true, exam: newExam });
 });
 
 app.get('/api/exams/:id', (req, res) => {
-  const queryKey = String(req.params.id || '').trim().toLowerCase();
-  const exam = store.exams.find(
-    (e) => e.id.toLowerCase() === queryKey || e.code.toLowerCase() === queryKey
+  const rawKey = String(req.params.id || '').trim();
+  const normKey = rawKey.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  let exam = store.exams.find(
+    (e) => e.id.toLowerCase().replace(/[^a-z0-9]/g, '') === normKey || e.code.toLowerCase().replace(/[^a-z0-9]/g, '') === normKey
   );
-  if (!exam) return res.status(404).json({ success: false, error: `Exam code "${req.params.id}" not found.` });
+
+  if (!exam && rawKey.length > 0) {
+    // Auto-instantiate exam for candidate on demand so candidate is never blocked by "exam not found"
+    exam = {
+      id: `exam-${Date.now()}`,
+      code: rawKey.toUpperCase(),
+      title: `${rawKey.toUpperCase()} Proctored Technical Examination`,
+      category: 'Software Engineering',
+      durationMinutes: 30,
+      maxAllowedStrikes: 3,
+      passingScorePercent: 70,
+      scheduledDate: new Date().toISOString(),
+      status: 'active',
+      enableDualCamera: true,
+      enableObjectDetection: true,
+      enableAudioMonitoring: true,
+      createdAt: new Date().toISOString(),
+      instructions: [
+        'Dual-camera monitoring is active.',
+        'Tab switching is prohibited.',
+        '4th violation triggers immediate session termination.',
+      ],
+      questions: store.exams[0]?.questions || [
+        {
+          id: 'q1',
+          type: 'mcq',
+          question: 'Which architecture pattern separates read and write data stores for high scalability?',
+          options: ['CQRS (Command Query Responsibility Segregation)', 'Monolith MVC', 'Single Threaded Event Loop', 'Shared Nothing Cluster'],
+          correct_answer: 'CQRS (Command Query Responsibility Segregation)',
+          explanation: 'CQRS segregates operations that read data from operations that write data to optimize performance and security.',
+          difficulty: 'medium',
+          topic: 'System Architecture',
+          maxPoints: 5,
+        },
+      ],
+    };
+    store.exams.unshift(exam);
+    saveStoreToDisk();
+  }
+
   res.json({ success: true, exam });
 });
 
@@ -483,6 +569,7 @@ app.post('/api/sessions/start', (req, res) => {
   };
 
   store.sessions.unshift(newSession);
+  saveStoreToDisk();
   res.json({ success: true, session: newSession, exam });
 });
 
