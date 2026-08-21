@@ -125,7 +125,10 @@ export const PracticeHub: React.FC = () => {
                 <Sliders className="w-4 h-4 text-indigo-400" />
                 <span>Configure Question Generator</span>
               </h2>
-              <span className="text-xs text-slate-400 font-mono">Gemini 2.5 Flash Engine</span>
+              <span className="text-xs text-emerald-400 font-mono flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                Groq Llama 3.3 70B Engine
+              </span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

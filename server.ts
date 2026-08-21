@@ -1,5 +1,6 @@
 import express from 'express';
 import { GoogleGenAI, Type } from '@google/genai';
+import Groq from 'groq-sdk';
 import dotenv from 'dotenv';
 import path from 'path';
 
@@ -10,6 +11,13 @@ const PORT = 3000;
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Lazy Groq client helper
+function getGroqClient(): Groq | null {
+  const key = process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY;
+  if (!key || key.includes('YOUR_GROQ_API_KEY')) return null;
+  return new Groq({ apiKey: key });
+}
 
 // Lazy Gemini client helper
 function getGeminiClient(): GoogleGenAI | null {
@@ -617,68 +625,16 @@ app.get('/api/pair/:code/frame', (req, res) => {
   });
 });
 
-// --- SEPARATE LLM PRACTICE SUITE (Using Gemini API) ---
+// --- SEPARATE LLM PRACTICE SUITE (Using Groq Llama 3.3 & Gemini API) ---
 // 1. Generate Practice MCQs with strict exam quality rules
 app.post('/api/practice/generate-mcq', async (req, res) => {
   try {
     const { topic, subtopic, difficulty = 'medium', count = 5, previousQuestions = [] } = req.body;
+    const groq = getGroqClient();
     const ai = getGeminiClient();
 
     if (!topic || topic.trim().length === 0) {
       return res.status(400).json({ questions: [], error: 'Topic is required to generate practice questions.' });
-    }
-
-    if (!ai) {
-      // Fallback realistic questions when API key is not configured
-      return res.json({
-        questions: [
-          {
-            id: `q-mock-${Date.now()}-1`,
-            question: `In ${topic} (${subtopic || 'Core Concept'}), what is the primary architectural tradeoff regarding state management at scale?`,
-            options: [
-              'Centralized synchronized state vs Distributed partition tolerance',
-              'Single thread execution vs Monolithic kernel caching',
-              'Static asset compression vs Dynamic CDN routing',
-              'Lossless image encoding vs Floating point precision',
-            ],
-            correct_answer: 'Centralized synchronized state vs Distributed partition tolerance',
-            explanation: 'Large-scale distributed systems must balance strong immediate consistency with network partition resilience. Centralized state creates bottlenecks.',
-            difficulty: difficulty,
-            topic: topic,
-            subtopic: subtopic || 'Architecture',
-          },
-          {
-            id: `q-mock-${Date.now()}-2`,
-            question: `Which data structure provides amortized O(1) average time complexity for both key insertion and lookup operations in ${topic}?`,
-            options: [
-              'Hash Table with good hash distribution',
-              'Balanced Red-Black Binary Search Tree',
-              'Singly-linked Skip List',
-              'B+ Tree with leaf node chaining',
-            ],
-            correct_answer: 'Hash Table with good hash distribution',
-            explanation: 'Hash tables offer O(1) average lookup/insertion. Trees and skip lists typically offer O(log n) time.',
-            difficulty: difficulty,
-            topic: topic,
-            subtopic: subtopic || 'Data Structures',
-          },
-          {
-            id: `q-mock-${Date.now()}-3`,
-            question: `When debugging an unexpected memory leak in high-throughput applications, which technique is most definitive?`,
-            options: [
-              'Analyzing heap snapshots and object allocation timelines',
-              'Increasing maximum swap space on the host VM',
-              'Disabling garbage collection thread pools entirely',
-              'Switching from TCP to UDP communication',
-            ],
-            correct_answer: 'Analyzing heap snapshots and object allocation timelines',
-            explanation: 'Heap snapshot diffing pinpoints retainers holding references to unused memory, whereas expanding swap only delays out-of-memory crashes.',
-            difficulty: difficulty,
-            topic: topic,
-            subtopic: subtopic || 'Diagnostics',
-          },
-        ],
-      });
     }
 
     const prompt = `You are an expert exam question generator integrated into an educational practice platform used by students preparing for proctored exams.
@@ -715,43 +671,95 @@ OUTPUT JSON FORMAT ONLY with schema:
   ]
 }`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            questions: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  id: { type: Type.STRING },
-                  question: { type: Type.STRING },
-                  options: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
-                  },
-                  correct_answer: { type: Type.STRING },
-                  explanation: { type: Type.STRING },
-                  difficulty: { type: Type.STRING },
-                  topic: { type: Type.STRING },
-                  subtopic: { type: Type.STRING },
-                },
-                required: ['id', 'question', 'options', 'correct_answer', 'explanation', 'difficulty', 'topic'],
-              },
-            },
-            error: { type: Type.STRING },
-          },
-          required: ['questions'],
-        },
-      },
-    });
+    if (groq) {
+      const completion = await groq.chat.completions.create({
+        messages: [
+          { role: 'system', content: 'You are an AI exam question generator. Return ONLY valid JSON matching the schema.' },
+          { role: 'user', content: prompt }
+        ],
+        model: 'llama-3.3-70b-versatile',
+        response_format: { type: 'json_object' },
+      });
 
-    const parsed = JSON.parse(response.text || '{"questions":[]}');
-    res.json(parsed);
+      const parsed = JSON.parse(completion.choices[0]?.message?.content || '{"questions":[]}');
+      return res.json(parsed);
+    }
+
+    if (ai) {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              questions: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    id: { type: Type.STRING },
+                    question: { type: Type.STRING },
+                    options: {
+                      type: Type.ARRAY,
+                      items: { type: Type.STRING },
+                    },
+                    correct_answer: { type: Type.STRING },
+                    explanation: { type: Type.STRING },
+                    difficulty: { type: Type.STRING },
+                    topic: { type: Type.STRING },
+                    subtopic: { type: Type.STRING },
+                  },
+                  required: ['id', 'question', 'options', 'correct_answer', 'explanation', 'difficulty', 'topic'],
+                },
+              },
+              error: { type: Type.STRING },
+            },
+            required: ['questions'],
+          },
+        },
+      });
+
+      const parsed = JSON.parse(response.text || '{"questions":[]}');
+      return res.json(parsed);
+    }
+
+    // Fallback realistic questions when API key is not configured
+    return res.json({
+      questions: [
+        {
+          id: `q-mock-${Date.now()}-1`,
+          question: `In ${topic} (${subtopic || 'Core Concept'}), what is the primary architectural tradeoff regarding state management at scale?`,
+          options: [
+            'Centralized synchronized state vs Distributed partition tolerance',
+            'Single thread execution vs Monolithic kernel caching',
+            'Static asset compression vs Dynamic CDN routing',
+            'Lossless image encoding vs Floating point precision',
+          ],
+          correct_answer: 'Centralized synchronized state vs Distributed partition tolerance',
+          explanation: 'Large-scale distributed systems must balance strong immediate consistency with network partition resilience. Centralized state creates bottlenecks.',
+          difficulty: difficulty,
+          topic: topic,
+          subtopic: subtopic || 'Architecture',
+        },
+        {
+          id: `q-mock-${Date.now()}-2`,
+          question: `Which data structure provides amortized O(1) average time complexity for both key insertion and lookup operations in ${topic}?`,
+          options: [
+            'Hash Table with good hash distribution',
+            'Balanced Red-Black Binary Search Tree',
+            'Singly-linked Skip List',
+            'B+ Tree with leaf node chaining',
+          ],
+          correct_answer: 'Hash Table with good hash distribution',
+          explanation: 'Hash tables offer O(1) average lookup/insertion. Trees and skip lists typically offer O(log n) time.',
+          difficulty: difficulty,
+          topic: topic,
+          subtopic: subtopic || 'Data Structures',
+        },
+      ],
+    });
   } catch (error: any) {
     console.error('Error generating practice MCQs:', error);
     res.status(500).json({ questions: [], error: error.message || 'Failed to generate practice questions' });
@@ -762,37 +770,17 @@ OUTPUT JSON FORMAT ONLY with schema:
 app.post('/api/practice/evaluate-subjective', async (req, res) => {
   try {
     const { question, studentAnswer, rubricGuidelines, topic, maxScore = 10 } = req.body;
+    const groq = getGroqClient();
     const ai = getGeminiClient();
 
     if (!question || !studentAnswer) {
       return res.status(400).json({ error: 'Question and student answer are required.' });
     }
 
-    if (!ai) {
-      // Graceful fallback evaluation
-      const lengthScore = Math.min(maxScore, Math.max(3, Math.floor(studentAnswer.length / 50)));
-      return res.json({
-        score: lengthScore,
-        maxScore,
-        overallFeedback: 'Your response demonstrates a foundational grasp of the core concepts, with clear explanations of primary mechanisms.',
-        strengths: ['Identified the core problem statement accurately', 'Structured answer clearly with logical progression'],
-        areasForImprovement: ['Elaborate on edge cases and failure recovery strategies', 'Include quantitative metrics or algorithmic complexities'],
-        keyMissingPoints: ['Specific performance benchmarks under high contention'],
-        modelAnswer: 'A comprehensive answer highlights both theoretical trade-offs, step-by-step mechanics, and distributed resilience considerations.',
-        criteriaBreakdown: [
-          { criterion: 'Conceptual Accuracy', score: Math.round(lengthScore * 0.4), max: Math.round(maxScore * 0.4), comment: 'Accurate high-level definitions.' },
-          { criterion: 'Technical Depth', score: Math.round(lengthScore * 0.4), max: Math.round(maxScore * 0.4), comment: 'Good explanation of mechanics.' },
-          { criterion: 'Clarity & Edge Cases', score: Math.round(lengthScore * 0.2), max: Math.round(maxScore * 0.2), comment: 'Could expand on boundary constraints.' },
-        ],
-      });
-    }
-
     const prompt = `You are a strict yet constructive exam grading examiner for a proctored technical evaluation.
 Grade the candidate's subjective response objectively based on the question and rubric.
 
-Question:
-"${question}"
-
+Question: "${question}"
 Topic: "${topic || 'General Technical'}"
 Rubric / Ideal Guidelines: "${rubricGuidelines || 'Evaluate conceptual correctness, depth, edge cases, and practical clarity.'}"
 Maximum Possible Score: ${maxScore}
@@ -802,44 +790,89 @@ Candidate's Submitted Answer:
 ${studentAnswer}
 """
 
-Evaluate fairly. Return ONLY JSON matching the schema with numerical scores, strengths, constructive improvements, key missing points, and an exemplary model answer.`;
+Evaluate fairly. Return ONLY JSON matching this schema:
+{
+  "score": number,
+  "maxScore": ${maxScore},
+  "overallFeedback": "string",
+  "strengths": ["string"],
+  "areasForImprovement": ["string"],
+  "keyMissingPoints": ["string"],
+  "modelAnswer": "string",
+  "criteriaBreakdown": [
+    { "criterion": "string", "score": number, "max": number, "comment": "string" }
+  ]
+}`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            score: { type: Type.NUMBER },
-            maxScore: { type: Type.NUMBER },
-            overallFeedback: { type: Type.STRING },
-            strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
-            areasForImprovement: { type: Type.ARRAY, items: { type: Type.STRING } },
-            keyMissingPoints: { type: Type.ARRAY, items: { type: Type.STRING } },
-            modelAnswer: { type: Type.STRING },
-            criteriaBreakdown: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  criterion: { type: Type.STRING },
-                  score: { type: Type.NUMBER },
-                  max: { type: Type.NUMBER },
-                  comment: { type: Type.STRING },
+    if (groq) {
+      const completion = await groq.chat.completions.create({
+        messages: [
+          { role: 'system', content: 'You are an AI exam evaluation engine. Return ONLY valid JSON matching the schema.' },
+          { role: 'user', content: prompt }
+        ],
+        model: 'llama-3.3-70b-versatile',
+        response_format: { type: 'json_object' },
+      });
+
+      const parsed = JSON.parse(completion.choices[0]?.message?.content || '{}');
+      return res.json(parsed);
+    }
+
+    if (ai) {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              score: { type: Type.NUMBER },
+              maxScore: { type: Type.NUMBER },
+              overallFeedback: { type: Type.STRING },
+              strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
+              areasForImprovement: { type: Type.ARRAY, items: { type: Type.STRING } },
+              keyMissingPoints: { type: Type.ARRAY, items: { type: Type.STRING } },
+              modelAnswer: { type: Type.STRING },
+              criteriaBreakdown: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    criterion: { type: Type.STRING },
+                    score: { type: Type.NUMBER },
+                    max: { type: Type.NUMBER },
+                    comment: { type: Type.STRING },
+                  },
+                  required: ['criterion', 'score', 'max', 'comment'],
                 },
-                required: ['criterion', 'score', 'max', 'comment'],
               },
             },
+            required: ['score', 'maxScore', 'overallFeedback', 'strengths', 'areasForImprovement', 'keyMissingPoints', 'modelAnswer', 'criteriaBreakdown'],
           },
-          required: ['score', 'maxScore', 'overallFeedback', 'strengths', 'areasForImprovement', 'keyMissingPoints', 'modelAnswer', 'criteriaBreakdown'],
         },
-      },
-    });
+      });
 
-    const parsed = JSON.parse(response.text || '{}');
-    res.json(parsed);
+      const parsed = JSON.parse(response.text || '{}');
+      return res.json(parsed);
+    }
+
+    // Graceful fallback evaluation
+    const lengthScore = Math.min(maxScore, Math.max(3, Math.floor(studentAnswer.length / 50)));
+    return res.json({
+      score: lengthScore,
+      maxScore,
+      overallFeedback: 'Your response demonstrates a foundational grasp of the core concepts, with clear explanations of primary mechanisms.',
+      strengths: ['Identified the core problem statement accurately', 'Structured answer clearly with logical progression'],
+      areasForImprovement: ['Elaborate on edge cases and failure recovery strategies', 'Include quantitative metrics or algorithmic complexities'],
+      keyMissingPoints: ['Specific performance benchmarks under high contention'],
+      modelAnswer: 'A comprehensive answer highlights both theoretical trade-offs, step-by-step mechanics, and distributed resilience considerations.',
+      criteriaBreakdown: [
+        { criterion: 'Conceptual Accuracy', score: Math.round(lengthScore * 0.4), max: Math.round(maxScore * 0.4), comment: 'Accurate high-level definitions.' },
+        { criterion: 'Technical Depth', score: Math.round(lengthScore * 0.4), max: Math.round(maxScore * 0.4), comment: 'Good explanation of mechanics.' },
+        { criterion: 'Clarity & Edge Cases', score: Math.round(lengthScore * 0.2), max: Math.round(maxScore * 0.2), comment: 'Could expand on boundary constraints.' },
+      ],
+    });
   } catch (error: any) {
     console.error('Error evaluating subjective answer:', error);
     res.status(500).json({ error: error.message || 'Failed to evaluate answer' });
@@ -850,15 +883,10 @@ Evaluate fairly. Return ONLY JSON matching the schema with numerical scores, str
 app.post('/api/practice/ask-doubt', async (req, res) => {
   try {
     const { questionContext, userQuery, conversationHistory = [] } = req.body;
+    const groq = getGroqClient();
     const ai = getGeminiClient();
 
     if (!userQuery) return res.status(400).json({ error: 'Query is required.' });
-
-    if (!ai) {
-      return res.json({
-        reply: `Regarding your question about "${questionContext?.slice(0, 60) || 'this topic'}": The key principle is understanding the underlying architectural mechanics. Make sure you can trace the data flow step-by-step and identify why incorrect choices fail under boundary conditions.`,
-      });
-    }
 
     const prompt = `You are an encouraging, highly knowledgeable AI Exam Preparation Tutor for students studying for rigorous exams.
 The student has a doubt about a practice question.
@@ -871,12 +899,31 @@ Student's Question:
 
 Provide a crisp, crystal-clear explanation (under 3-4 paragraphs) that breaks down the concepts intuitively with analogies or concise pseudo-code where helpful, without being overly verbose.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-    });
+    if (groq) {
+      const completion = await groq.chat.completions.create({
+        messages: [
+          { role: 'system', content: 'You are an encouraging AI Exam Preparation Tutor.' },
+          { role: 'user', content: prompt }
+        ],
+        model: 'llama-3.3-70b-versatile',
+      });
 
-    res.json({ reply: response.text });
+      const reply = completion.choices[0]?.message?.content || '';
+      return res.json({ reply });
+    }
+
+    if (ai) {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+      });
+
+      return res.json({ reply: response.text });
+    }
+
+    res.json({
+      reply: `Regarding your question about "${questionContext?.slice(0, 60) || 'this topic'}": The key principle is understanding the underlying architectural mechanics. Make sure you can trace the data flow step-by-step and identify why incorrect choices fail under boundary conditions.`,
+    });
   } catch (error: any) {
     console.error('Error answering doubt:', error);
     res.status(500).json({ error: error.message || 'Failed to answer doubt' });
