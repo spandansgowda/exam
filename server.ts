@@ -19,6 +19,28 @@ function getGroqClient(): Groq | null {
   return new Groq({ apiKey: key });
 }
 
+// Robust JSON extractor for LLM output
+function cleanParseJSON(rawText: string, fallback: any = {}) {
+  if (!rawText) return fallback;
+  try {
+    return JSON.parse(rawText);
+  } catch (e) {
+    const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (jsonMatch && jsonMatch[1]) {
+      try {
+        return JSON.parse(jsonMatch[1].trim());
+      } catch (innerErr) {}
+    }
+    const objectMatch = rawText.match(/\{[\s\S]*\}/);
+    if (objectMatch) {
+      try {
+        return JSON.parse(objectMatch[0]);
+      } catch (innerErr) {}
+    }
+    return fallback;
+  }
+}
+
 // Lazy Gemini client helper
 function getGeminiClient(): GoogleGenAI | null {
   const key = process.env.GEMINI_API_KEY;
@@ -674,14 +696,14 @@ OUTPUT JSON FORMAT ONLY with schema:
     if (groq) {
       const completion = await groq.chat.completions.create({
         messages: [
-          { role: 'system', content: 'You are an AI exam question generator. Return ONLY valid JSON matching the schema.' },
+          { role: 'system', content: 'You are an AI exam question generator. Output ONLY a valid JSON object matching the schema.' },
           { role: 'user', content: prompt }
         ],
-        model: 'llama-3.3-70b-versatile',
-        response_format: { type: 'json_object' },
+        model: 'groq/compound',
       });
 
-      const parsed = JSON.parse(completion.choices[0]?.message?.content || '{"questions":[]}');
+      const rawText = completion.choices[0]?.message?.content || '';
+      const parsed = cleanParseJSON(rawText, { questions: [] });
       return res.json(parsed);
     }
 
@@ -807,14 +829,14 @@ Evaluate fairly. Return ONLY JSON matching this schema:
     if (groq) {
       const completion = await groq.chat.completions.create({
         messages: [
-          { role: 'system', content: 'You are an AI exam evaluation engine. Return ONLY valid JSON matching the schema.' },
+          { role: 'system', content: 'You are an AI exam evaluation engine. Output ONLY valid JSON matching the schema.' },
           { role: 'user', content: prompt }
         ],
-        model: 'llama-3.3-70b-versatile',
-        response_format: { type: 'json_object' },
+        model: 'groq/compound',
       });
 
-      const parsed = JSON.parse(completion.choices[0]?.message?.content || '{}');
+      const rawText = completion.choices[0]?.message?.content || '';
+      const parsed = cleanParseJSON(rawText, {});
       return res.json(parsed);
     }
 
@@ -905,7 +927,7 @@ Provide a crisp, crystal-clear explanation (under 3-4 paragraphs) that breaks do
           { role: 'system', content: 'You are an encouraging AI Exam Preparation Tutor.' },
           { role: 'user', content: prompt }
         ],
-        model: 'llama-3.3-70b-versatile',
+        model: 'groq/compound',
       });
 
       const reply = completion.choices[0]?.message?.content || '';
