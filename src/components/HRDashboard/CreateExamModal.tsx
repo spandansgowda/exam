@@ -9,6 +9,7 @@ interface CreateExamModalProps {
 
 export const CreateExamModal: React.FC<CreateExamModalProps> = ({ onClose, onExamCreated }) => {
   const [title, setTitle] = useState('');
+  const [code, setCode] = useState(`HR-${Math.floor(1000 + Math.random() * 9000)}`);
   const [category, setCategory] = useState('Software Engineering');
   const [durationMinutes, setDurationMinutes] = useState(30);
   const [maxAllowedStrikes, setMaxAllowedStrikes] = useState(3);
@@ -67,6 +68,7 @@ export const CreateExamModal: React.FC<CreateExamModalProps> = ({ onClose, onExa
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          code: code.trim().toUpperCase(),
           title: title.trim(),
           category,
           durationMinutes,
@@ -124,6 +126,18 @@ export const CreateExamModal: React.FC<CreateExamModalProps> = ({ onClose, onExa
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. Senior Frontend Architecture Assessment"
                 className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-400 block mb-1">HR Exam Access / Invite Code:</label>
+              <input
+                type="text"
+                required
+                value={code}
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                placeholder="e.g. HR-2026 or ENG-2026"
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-blue-400 font-mono font-bold uppercase focus:outline-none focus:border-blue-500"
               />
             </div>
 

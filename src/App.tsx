@@ -70,26 +70,48 @@ export default function App() {
     }
   }, []);
 
+  const [lobbyError, setLobbyError] = useState<string | null>(null);
+
   // Fetch available exam on code enter
   const handleProceedFromLobby = async () => {
+    if (!examCodeInput.trim()) {
+      setLobbyError('Please enter an Exam Code provided by your HR recruiter.');
+      return;
+    }
+
     setIsLoading(true);
+    setLobbyError(null);
+
     try {
-      const res = await fetch(`/api/exams/${examCodeInput.trim() || 'ENG-2026'}`);
+      const codeToSearch = examCodeInput.trim();
+      const res = await fetch(`/api/exams/${encodeURIComponent(codeToSearch)}`);
       const data = await safeFetchJSON<any>(res);
+
       if (data.success && data.exam) {
         setSelectedExam(data.exam);
         setExamStep(1); // Go to ID Verification
       } else {
-        // Fallback to first available exam
+        // Try fallback to all exams or show clear error
         const allRes = await fetch('/api/exams');
         const allData = await safeFetchJSON<any>(allRes);
-        if (allData.exams && allData.exams.length > 0) {
+        const match = allData.exams?.find(
+          (e: any) => e.code.toLowerCase() === codeToSearch.toLowerCase() || e.id.toLowerCase() === codeToSearch.toLowerCase()
+        );
+
+        if (match) {
+          setSelectedExam(match);
+          setExamStep(1);
+        } else if (allData.exams && allData.exams.length > 0) {
+          // If candidate typed a default code or empty, link to first exam
           setSelectedExam(allData.exams[0]);
           setExamStep(1);
+        } else {
+          setLobbyError(`Exam Code "${codeToSearch}" not found. Please verify the code provided by HR.`);
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to fetch exam:', err);
+      setLobbyError(err.message || 'Failed to verify exam code');
     } finally {
       setIsLoading(false);
     }
@@ -198,18 +220,26 @@ export default function App() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-slate-300 block mb-1">Exam Code / Invite Token:</label>
+                    <label className="text-xs font-semibold text-slate-300 block mb-1">HR Exam Code / Invite Token:</label>
                     <div className="relative">
                       <KeyRound className="w-4 h-4 absolute left-3.5 top-3 text-slate-500" />
                       <input
                         type="text"
                         required
                         value={examCodeInput}
-                        onChange={(e) => setExamCodeInput(e.target.value.toUpperCase())}
-                        placeholder="e.g. ENG-2026"
+                        onChange={(e) => {
+                          setExamCodeInput(e.target.value.toUpperCase());
+                          if (lobbyError) setLobbyError(null);
+                        }}
+                        placeholder="e.g. ENG-2026 or HR-2026"
                         className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-xs font-mono font-bold text-blue-400 focus:outline-none focus:border-blue-500 uppercase"
                       />
                     </div>
+                    {lobbyError && (
+                      <p className="text-[11px] text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                        <span>⚠</span> {lobbyError}
+                      </p>
+                    )}
                   </div>
                 </div>
 

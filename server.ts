@@ -387,10 +387,15 @@ app.get('/api/exams', (req, res) => {
 });
 
 app.post('/api/exams', (req, res) => {
-  const { title, category, durationMinutes, maxAllowedStrikes, passingScorePercent, questions, instructions, enableDualCamera } = req.body;
+  const { code, title, category, durationMinutes, maxAllowedStrikes, passingScorePercent, questions, instructions, enableDualCamera } = req.body;
+  
+  const customCode = (code && String(code).trim().length > 0)
+    ? String(code).trim().toUpperCase()
+    : `EXAM-${Math.floor(1000 + Math.random() * 9000)}`;
+
   const newExam = {
     id: `exam-${Date.now()}`,
-    code: `EXAM-${Math.floor(1000 + Math.random() * 9000)}`,
+    code: customCode,
     title: title || 'Custom Scheduled Exam',
     category: category || 'General Technical',
     durationMinutes: Number(durationMinutes) || 30,
@@ -426,8 +431,11 @@ app.post('/api/exams', (req, res) => {
 });
 
 app.get('/api/exams/:id', (req, res) => {
-  const exam = store.exams.find((e) => e.id === req.params.id || e.code === req.params.id);
-  if (!exam) return res.status(404).json({ success: false, error: 'Exam not found' });
+  const queryKey = String(req.params.id || '').trim().toLowerCase();
+  const exam = store.exams.find(
+    (e) => e.id.toLowerCase() === queryKey || e.code.toLowerCase() === queryKey
+  );
+  if (!exam) return res.status(404).json({ success: false, error: `Exam code "${req.params.id}" not found.` });
   res.json({ success: true, exam });
 });
 
@@ -444,7 +452,8 @@ app.get('/api/sessions/:id', (req, res) => {
 
 app.post('/api/sessions/start', (req, res) => {
   const { examId, candidateName, candidateEmail, candidatePhotoUrl, secondaryDeviceCode } = req.body;
-  const exam = store.exams.find((e) => e.id === examId || e.code === examId) || store.exams[0];
+  const searchKey = String(examId || '').trim().toLowerCase();
+  const exam = store.exams.find((e) => e.id.toLowerCase() === searchKey || e.code.toLowerCase() === searchKey) || store.exams[0];
   
   const existingSession = store.sessions.find((s) => s.candidateEmail === candidateEmail && s.examId === exam.id && s.status === 'in_progress');
   if (existingSession) {
